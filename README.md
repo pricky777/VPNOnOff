@@ -9,10 +9,12 @@
 
 ## 前置条件
 
-本应用需要配合以下两个应用使用：
+**本应用需要配合以下两个应用使用：**
 
 1. **[Clash Meta for Android](https://github.com/MetaCubeX/ClashMetaForAndroid)** — 需提前安装并完成订阅配置，确保手动启动 VPN 可正常使用
 2. **[Shizuku](https://github.com/RikkaApps/Shizuku)** — 用于在锁屏等受限场景下控制 VPN 切换。需提前安装并启动 Shizuku 服务
+
+> **缺少以上任一应用，VPN OnOff 将无法正常工作。**
 
 ## 权限设置
 
