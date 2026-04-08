@@ -34,7 +34,6 @@ public class MainActivity extends AppCompatActivity {
     private Button toggleButton;
     private TextView statusText;
     private TextView wifiStatusText;
-    private TextView overlayStatusText;
     private TextView bgPopupStatusText;
     private TextView shizukuStatusText;
     private boolean serviceRunning = false;
@@ -56,7 +55,6 @@ public class MainActivity extends AppCompatActivity {
         toggleButton = findViewById(R.id.toggleButton);
         statusText = findViewById(R.id.statusText);
         wifiStatusText = findViewById(R.id.wifiStatusText);
-        overlayStatusText = findViewById(R.id.overlayStatusText);
         bgPopupStatusText = findViewById(R.id.bgPopupStatusText);
         shizukuStatusText = findViewById(R.id.shizukuStatusText);
 
@@ -131,12 +129,6 @@ public class MainActivity extends AppCompatActivity {
         Shizuku.removeRequestPermissionResultListener(shizukuPermListener);
     }
 
-    private void requestOverlayPermission() {
-        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:" + getPackageName()));
-        startActivity(intent);
-    }
-
     private void openAppPermissionSettings() {
         try {
             Intent intent = new Intent("miui.intent.action.APP_PERM_EDITOR");
@@ -171,16 +163,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void checkPermissions() {
-        // Shizuku permission
         checkShizukuPermission();
-
-        // Overlay permission
-        boolean hasOverlay = Settings.canDrawOverlays(this);
-        overlayStatusText.setText(hasOverlay
-                ? "悬浮窗权限: 已授予"
-                : "悬浮窗权限: 未授予 (点击授予)");
-        overlayStatusText.setTextColor(hasOverlay ? 0xFF4CAF50 : 0xFFFF9800);
-        overlayStatusText.setOnClickListener(hasOverlay ? null : v -> requestOverlayPermission());
 
         // MIUI background popup permission
         boolean isMiui = isMiuiDevice();
