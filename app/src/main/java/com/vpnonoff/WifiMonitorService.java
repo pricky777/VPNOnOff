@@ -126,24 +126,25 @@ public class WifiMonitorService extends Service {
                 .build();
         connectivityManager.registerNetworkCallback(request, networkCallback, handler);
 
-        // Sync VPN state on startup by checking existing WiFi networks
-        Network[] networks = connectivityManager.getAllNetworks();
-        for (Network network : networks) {
-            NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(network);
-            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                wifiNetworks.add(network);
+        // Sync VPN state on startup, run on handler thread to avoid race with callbacks
+        handler.post(() -> {
+            Network[] networks = connectivityManager.getAllNetworks();
+            for (Network network : networks) {
+                NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(network);
+                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    wifiNetworks.add(network);
+                }
             }
-        }
-        Log.i(TAG, "Initial WiFi state: " + (wifiNetworks.isEmpty() ? "disconnected" : "connected"));
-        executeAction(wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP);
+            Log.i(TAG, "Initial WiFi state: " + (wifiNetworks.isEmpty() ? "disconnected" : "connected"));
+            executeAction(wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP);
+        });
     }
 
     private void scheduleAction() {
-        String action = wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP;
         if (pendingAction != null) {
             handler.removeCallbacks(pendingAction);
         }
-        pendingAction = () -> executeAction(action);
+        pendingAction = () -> executeAction(wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP);
         handler.postDelayed(pendingAction, DEBOUNCE_MS);
     }
 
@@ -152,20 +153,24 @@ public class WifiMonitorService extends Service {
             Log.i(TAG, "Skipping duplicate action: " + action);
             return;
         }
-        lastDesiredAction = action;
 
         boolean wifiConnected = !wifiNetworks.isEmpty();
         Log.i(TAG, wifiConnected ? "WiFi connected" : "WiFi disconnected");
-        controlClash(action);
-        updateNotification(wifiConnected ? "WiFi 已连接 - VPN 关闭" : "WiFi 未连接 - VPN 开启");
-        sendStatusBroadcast(wifiConnected);
+
+        if (controlClash(action)) {
+            lastDesiredAction = action;
+            updateNotification(wifiConnected ? "WiFi 已连接 - VPN 关闭" : "WiFi 未连接 - VPN 开启");
+            sendStatusBroadcast(wifiConnected);
+        }
     }
 
-    private void controlClash(String action) {
+    private boolean controlClash(String action) {
         Log.i(TAG, "Controlling Clash: " + action);
         if (!controlClashViaShizuku(action)) {
             Log.e(TAG, "Failed to control Clash - check Shizuku is running and authorized");
+            return false;
         }
+        return true;
     }
 
     private boolean controlClashViaShizuku(String action) {
