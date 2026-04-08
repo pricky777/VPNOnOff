@@ -11,6 +11,8 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import java.util.HashSet;
+import java.util.Set;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -35,8 +37,8 @@ public class WifiMonitorService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private HandlerThread handlerThread;
     private Handler handler;
-    private boolean wifiConnected = false;
-
+    private final Set<Network> wifiNetworks = new HashSet<>();
+    private String lastDesiredAction = null;
     private static final long DEBOUNCE_MS = 500;
     private Runnable pendingAction;
 
@@ -92,38 +94,30 @@ public class WifiMonitorService extends Service {
     private void registerWifiCallback() {
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
 
-        wifiConnected = isWifiConnected();
-        Log.i(TAG, "Initial WiFi state: " + (wifiConnected ? "connected" : "disconnected"));
-
-        // Sync VPN state to current WiFi state on startup
-        if (wifiConnected) {
-            controlClash(ACTION_STOP);
-            updateNotification("WiFi 已连接 - VPN 关闭");
-        } else {
-            controlClash(ACTION_START);
-            updateNotification("WiFi 未连接 - VPN 开启");
-        }
-
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
-                // Recheck via isWifiConnected() for consistency with onLost()
-                handler.postDelayed(() -> {
-                    if (isWifiConnected()) {
-                        Log.i(TAG, "WiFi connected");
-                        onWifiStateChanged(true);
-                    }
-                }, 500);
+                NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(network);
+                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    wifiNetworks.add(network);
+                    scheduleAction();
+                }
+            }
+
+            @Override
+            public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    wifiNetworks.add(network);
+                } else {
+                    wifiNetworks.remove(network);
+                }
+                scheduleAction();
             }
 
             @Override
             public void onLost(Network network) {
-                handler.postDelayed(() -> {
-                    if (!isWifiConnected()) {
-                        Log.i(TAG, "WiFi disconnected");
-                        onWifiStateChanged(false);
-                    }
-                }, 500);
+                wifiNetworks.remove(network);
+                scheduleAction();
             }
         };
 
@@ -131,34 +125,40 @@ public class WifiMonitorService extends Service {
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .build();
         connectivityManager.registerNetworkCallback(request, networkCallback, handler);
+
+        // Sync VPN state on startup by checking existing WiFi networks
+        Network[] networks = connectivityManager.getAllNetworks();
+        for (Network network : networks) {
+            NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(network);
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                wifiNetworks.add(network);
+            }
+        }
+        Log.i(TAG, "Initial WiFi state: " + (wifiNetworks.isEmpty() ? "disconnected" : "connected"));
+        executeAction(wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP);
     }
 
-    private boolean isWifiConnected() {
-        Network activeNetwork = connectivityManager.getActiveNetwork();
-        if (activeNetwork == null) return false;
-        NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(activeNetwork);
-        return caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
-    }
-
-    private void onWifiStateChanged(boolean connected) {
-        if (connected == wifiConnected) return;
-        wifiConnected = connected;
-
+    private void scheduleAction() {
+        String action = wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP;
         if (pendingAction != null) {
             handler.removeCallbacks(pendingAction);
         }
-
-        pendingAction = () -> {
-            if (connected) {
-                controlClash(ACTION_STOP);
-                updateNotification("WiFi 已连接 - VPN 关闭");
-            } else {
-                controlClash(ACTION_START);
-                updateNotification("WiFi 未连接 - VPN 开启");
-            }
-            sendStatusBroadcast(connected);
-        };
+        pendingAction = () -> executeAction(action);
         handler.postDelayed(pendingAction, DEBOUNCE_MS);
+    }
+
+    private void executeAction(String action) {
+        if (action.equals(lastDesiredAction)) {
+            Log.i(TAG, "Skipping duplicate action: " + action);
+            return;
+        }
+        lastDesiredAction = action;
+
+        boolean wifiConnected = !wifiNetworks.isEmpty();
+        Log.i(TAG, wifiConnected ? "WiFi connected" : "WiFi disconnected");
+        controlClash(action);
+        updateNotification(wifiConnected ? "WiFi 已连接 - VPN 关闭" : "WiFi 未连接 - VPN 开启");
+        sendStatusBroadcast(wifiConnected);
     }
 
     private void controlClash(String action) {
