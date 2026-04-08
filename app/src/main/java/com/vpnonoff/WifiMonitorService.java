@@ -136,7 +136,14 @@ public class WifiMonitorService extends Service {
                 }
             }
             Log.i(TAG, "Initial WiFi state: " + (wifiNetworks.isEmpty() ? "disconnected" : "connected"));
-            executeAction(wifiNetworks.isEmpty() ? ACTION_START : ACTION_STOP);
+            if (wifiNetworks.isEmpty()) {
+                // No WiFi — start VPN immediately
+                executeAction(ACTION_START);
+            } else {
+                // WiFi connected — just record state, don't send redundant STOP
+                lastDesiredAction = ACTION_STOP;
+                updateNotification("WiFi 已连接 - VPN 关闭");
+            }
         });
     }
 
@@ -185,13 +192,18 @@ public class WifiMonitorService extends Service {
                 return false;
             }
 
-            String cmd = "am start"
-                    + " -a " + action
-                    + " -n " + CLASH_PACKAGE + "/" + CLASH_CONTROL
-                    + " --activity-multiple-task"
-                    + " --activity-no-history"
-                    + " --activity-no-animation"
-                    + " --activity-exclude-from-recents";
+            String cmd;
+            if (ACTION_STOP.equals(action)) {
+                cmd = "am force-stop " + CLASH_PACKAGE;
+            } else {
+                cmd = "am start"
+                        + " -a " + action
+                        + " -n " + CLASH_PACKAGE + "/" + CLASH_CONTROL
+                        + " --activity-multiple-task"
+                        + " --activity-no-history"
+                        + " --activity-no-animation"
+                        + " --activity-exclude-from-recents";
+            }
 
             Log.i(TAG, "Executing via Shizuku: " + cmd);
             Method newProcess = Shizuku.class.getDeclaredMethod(
