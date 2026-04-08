@@ -22,20 +22,31 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import rikka.shizuku.Shizuku;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final String PREFS_NAME = "vpnonoff_prefs";
     private static final String KEY_SERVICE_ENABLED = "service_enabled";
     private static final int MIUI_OP_BACKGROUND_START_ACTIVITY = 10021;
+    private static final int SHIZUKU_REQUEST_CODE = 100;
 
     private Button toggleButton;
     private TextView statusText;
     private TextView wifiStatusText;
     private TextView overlayStatusText;
     private TextView bgPopupStatusText;
+    private TextView shizukuStatusText;
     private boolean serviceRunning = false;
 
     private BroadcastReceiver statusReceiver;
+
+    private final Shizuku.OnRequestPermissionResultListener shizukuPermListener =
+            (requestCode, grantResult) -> {
+                if (requestCode == SHIZUKU_REQUEST_CODE) {
+                    runOnUiThread(this::checkPermissions);
+                }
+            };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,8 +58,10 @@ public class MainActivity extends AppCompatActivity {
         wifiStatusText = findViewById(R.id.wifiStatusText);
         overlayStatusText = findViewById(R.id.overlayStatusText);
         bgPopupStatusText = findViewById(R.id.bgPopupStatusText);
+        shizukuStatusText = findViewById(R.id.shizukuStatusText);
 
-        // Request notification permission on Android 13+
+        Shizuku.addRequestPermissionResultListener(shizukuPermListener);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
@@ -57,7 +70,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // Restore state
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         serviceRunning = prefs.getBoolean(KEY_SERVICE_ENABLED, false);
 
@@ -70,11 +82,6 @@ public class MainActivity extends AppCompatActivity {
         checkPermissions();
 
         toggleButton.setOnClickListener(v -> {
-            if (!serviceRunning && !Settings.canDrawOverlays(this)) {
-                requestOverlayPermission();
-                return;
-            }
-
             serviceRunning = !serviceRunning;
             SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit();
             editor.putBoolean(KEY_SERVICE_ENABLED, serviceRunning);
@@ -118,6 +125,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Shizuku.removeRequestPermissionResultListener(shizukuPermListener);
+    }
+
     private void requestOverlayPermission() {
         Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:" + getPackageName()));
@@ -138,7 +151,29 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void requestShizukuPermission() {
+        try {
+            if (!Shizuku.pingBinder()) {
+                // Shizuku not running, try to open Shizuku app
+                Intent intent = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+                if (intent != null) {
+                    startActivity(intent);
+                }
+                return;
+            }
+            Shizuku.requestPermission(SHIZUKU_REQUEST_CODE);
+        } catch (Exception e) {
+            // Shizuku not installed
+            Intent intent = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/RikkaApps/Shizuku/releases"));
+            startActivity(intent);
+        }
+    }
+
     private void checkPermissions() {
+        // Shizuku permission
+        checkShizukuPermission();
+
         // Overlay permission
         boolean hasOverlay = Settings.canDrawOverlays(this);
         overlayStatusText.setText(hasOverlay
@@ -158,6 +193,27 @@ public class MainActivity extends AppCompatActivity {
             bgPopupStatusText.setOnClickListener(hasBgPopup ? null : v -> openAppPermissionSettings());
         } else {
             bgPopupStatusText.setVisibility(android.view.View.GONE);
+        }
+    }
+
+    private void checkShizukuPermission() {
+        try {
+            if (!Shizuku.pingBinder()) {
+                shizukuStatusText.setText("Shizuku: 未运行 (点击启动)");
+                shizukuStatusText.setTextColor(0xFFF44336);
+                shizukuStatusText.setOnClickListener(v -> requestShizukuPermission());
+                return;
+            }
+            boolean granted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED;
+            shizukuStatusText.setText(granted
+                    ? "Shizuku: 已授权"
+                    : "Shizuku: 未授权 (点击授权)");
+            shizukuStatusText.setTextColor(granted ? 0xFF4CAF50 : 0xFFFF9800);
+            shizukuStatusText.setOnClickListener(granted ? null : v -> requestShizukuPermission());
+        } catch (Exception e) {
+            shizukuStatusText.setText("Shizuku: 未安装 (点击下载)");
+            shizukuStatusText.setTextColor(0xFFF44336);
+            shizukuStatusText.setOnClickListener(v -> requestShizukuPermission());
         }
     }
 

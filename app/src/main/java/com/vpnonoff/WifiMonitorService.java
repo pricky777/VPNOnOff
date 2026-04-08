@@ -8,7 +8,6 @@ import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -18,6 +17,10 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
+
+import java.lang.reflect.Method;
+
+import rikka.shizuku.Shizuku;
 
 public class WifiMonitorService extends Service {
 
@@ -46,13 +49,11 @@ public class WifiMonitorService extends Service {
     public void onCreate() {
         super.onCreate();
 
-        // Use a dedicated thread for network callbacks
         handlerThread = new HandlerThread("WifiMonitorThread");
         handlerThread.start();
         handler = new Handler(handlerThread.getLooper());
         mainHandler = new Handler(getMainLooper());
 
-        // Acquire partial wake lock to keep CPU running
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VPNOnOff::WifiMonitor");
         wakeLock.acquire();
@@ -91,7 +92,6 @@ public class WifiMonitorService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // Restart service if swiped from recents
         Intent restartIntent = new Intent(this, WifiMonitorService.class);
         PendingIntent pendingIntent = PendingIntent.getService(
                 this, 0, restartIntent,
@@ -168,34 +168,60 @@ public class WifiMonitorService extends Service {
 
     private void controlClash(String action) {
         Log.i(TAG, "Controlling Clash: " + action);
-        try {
-            Intent intent = new Intent(action);
-            intent.setComponent(new ComponentName(CLASH_PACKAGE, CLASH_CONTROL));
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-                    | Intent.FLAG_ACTIVITY_NO_HISTORY
-                    | Intent.FLAG_ACTIVITY_NO_ANIMATION
-                    | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
-            startActivity(intent);
-        } catch (Exception e) {
-            Log.e(TAG, "startActivity failed, trying am command: " + e.getMessage());
-            controlClashViaShell(action);
-        }
+
+        // Try Shizuku first (shell-level access, bypasses BAL)
+        if (controlClashViaShizuku(action)) return;
+
+        // Fallback to direct startActivity
+        Log.i(TAG, "Shizuku unavailable, falling back to startActivity");
+        mainHandler.post(() -> {
+            try {
+                Intent intent = new Intent(action);
+                intent.setComponent(new ComponentName(CLASH_PACKAGE, CLASH_CONTROL));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                        | Intent.FLAG_ACTIVITY_NO_HISTORY
+                        | Intent.FLAG_ACTIVITY_NO_ANIMATION
+                        | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+                startActivity(intent);
+            } catch (Exception e) {
+                Log.e(TAG, "startActivity failed: " + e.getMessage());
+            }
+        });
     }
 
-    private void controlClashViaShell(String action) {
+    private boolean controlClashViaShizuku(String action) {
         try {
-            String[] cmd = {
-                "am", "start",
-                "-a", action,
-                "-n", CLASH_PACKAGE + "/" + CLASH_CONTROL,
-                "--activity-no-history",
-                "--activity-no-animation",
-                "--activity-exclude-from-recents"
-            };
-            Runtime.getRuntime().exec(cmd);
+            if (!Shizuku.pingBinder()) {
+                Log.w(TAG, "Shizuku not available");
+                return false;
+            }
+
+            if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "Shizuku permission not granted");
+                return false;
+            }
+
+            String cmd = "am start"
+                    + " -a " + action
+                    + " -n " + CLASH_PACKAGE + "/" + CLASH_CONTROL
+                    + " --activity-multiple-task"
+                    + " --activity-no-history"
+                    + " --activity-no-animation"
+                    + " --activity-exclude-from-recents";
+
+            Log.i(TAG, "Executing via Shizuku: " + cmd);
+            Method newProcess = Shizuku.class.getDeclaredMethod(
+                    "newProcess", String[].class, String[].class, String.class);
+            newProcess.setAccessible(true);
+            Process process = (Process) newProcess.invoke(null,
+                    new String[]{"sh", "-c", cmd}, null, null);
+            int exitCode = process.waitFor();
+            Log.i(TAG, "Shizuku command exit code: " + exitCode);
+            return exitCode == 0;
         } catch (Exception e) {
-            Log.e(TAG, "Shell command also failed: " + e.getMessage());
+            Log.e(TAG, "Shizuku execution failed: " + e.getMessage());
+            return false;
         }
     }
 

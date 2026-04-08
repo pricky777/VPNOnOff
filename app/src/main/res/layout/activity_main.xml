@@ -45,6 +45,15 @@
         android:layout_marginBottom="12dp" />
 
     <TextView
+        android:id="@+id/shizukuStatusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Shizuku: 检测中..."
+        android:textSize="13sp"
+        android:textColor="#FF9800"
+        android:layout_marginBottom="6dp" />
+
+    <TextView
         android:id="@+id/overlayStatusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

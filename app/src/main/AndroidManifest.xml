@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:allowBackup="true"
@@ -26,10 +27,28 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".RelayActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="" />
+
         <service
             android:name=".WifiMonitorService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <receiver
             android:name=".BootReceiver"
