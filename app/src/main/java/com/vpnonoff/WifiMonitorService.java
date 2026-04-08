@@ -5,7 +5,6 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -15,7 +14,6 @@ import android.net.NetworkRequest;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.PowerManager;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -37,10 +35,7 @@ public class WifiMonitorService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private HandlerThread handlerThread;
     private Handler handler;
-    private Handler mainHandler;
-    private PowerManager.WakeLock wakeLock;
     private boolean wifiConnected = false;
-    private boolean initialized = false;
 
     private static final long DEBOUNCE_MS = 500;
     private Runnable pendingAction;
@@ -52,11 +47,6 @@ public class WifiMonitorService extends Service {
         handlerThread = new HandlerThread("WifiMonitorThread");
         handlerThread.start();
         handler = new Handler(handlerThread.getLooper());
-        mainHandler = new Handler(getMainLooper());
-
-        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VPNOnOff::WifiMonitor");
-        wakeLock.acquire();
 
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification("监听中..."));
@@ -85,9 +75,6 @@ public class WifiMonitorService extends Service {
         if (handlerThread != null) {
             handlerThread.quitSafely();
         }
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
     }
 
     @Override
@@ -106,25 +93,33 @@ public class WifiMonitorService extends Service {
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
 
         wifiConnected = isWifiConnected();
-        initialized = true;
         Log.i(TAG, "Initial WiFi state: " + (wifiConnected ? "connected" : "disconnected"));
-        updateNotification(wifiConnected ? "WiFi 已连接 - VPN 关闭" : "WiFi 未连接 - VPN 开启");
+
+        // Sync VPN state to current WiFi state on startup
+        if (wifiConnected) {
+            controlClash(ACTION_STOP);
+            updateNotification("WiFi 已连接 - VPN 关闭");
+        } else {
+            controlClash(ACTION_START);
+            updateNotification("WiFi 未连接 - VPN 开启");
+        }
 
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
-                NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(network);
-                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                    Log.i(TAG, "WiFi connected");
-                    onWifiStateChanged(true);
-                }
+                // Recheck via isWifiConnected() for consistency with onLost()
+                handler.postDelayed(() -> {
+                    if (isWifiConnected()) {
+                        Log.i(TAG, "WiFi connected");
+                        onWifiStateChanged(true);
+                    }
+                }, 500);
             }
 
             @Override
             public void onLost(Network network) {
                 handler.postDelayed(() -> {
-                    boolean stillConnected = isWifiConnected();
-                    if (!stillConnected) {
+                    if (!isWifiConnected()) {
                         Log.i(TAG, "WiFi disconnected");
                         onWifiStateChanged(false);
                     }
@@ -146,7 +141,7 @@ public class WifiMonitorService extends Service {
     }
 
     private void onWifiStateChanged(boolean connected) {
-        if (!initialized || connected == wifiConnected) return;
+        if (connected == wifiConnected) return;
         wifiConnected = connected;
 
         if (pendingAction != null) {
@@ -168,26 +163,9 @@ public class WifiMonitorService extends Service {
 
     private void controlClash(String action) {
         Log.i(TAG, "Controlling Clash: " + action);
-
-        // Try Shizuku first (shell-level access, bypasses BAL)
-        if (controlClashViaShizuku(action)) return;
-
-        // Fallback to direct startActivity
-        Log.i(TAG, "Shizuku unavailable, falling back to startActivity");
-        mainHandler.post(() -> {
-            try {
-                Intent intent = new Intent(action);
-                intent.setComponent(new ComponentName(CLASH_PACKAGE, CLASH_CONTROL));
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                        | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-                        | Intent.FLAG_ACTIVITY_NO_HISTORY
-                        | Intent.FLAG_ACTIVITY_NO_ANIMATION
-                        | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
-                startActivity(intent);
-            } catch (Exception e) {
-                Log.e(TAG, "startActivity failed: " + e.getMessage());
-            }
-        });
+        if (!controlClashViaShizuku(action)) {
+            Log.e(TAG, "Failed to control Clash - check Shizuku is running and authorized");
+        }
     }
 
     private boolean controlClashViaShizuku(String action) {
