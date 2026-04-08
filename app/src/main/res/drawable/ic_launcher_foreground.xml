@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- VPN shield icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24L30,34v15c0,13.8 10.2,26.7 24,30c13.8,-3.3 24,-16.2 24,-30V34L54,24zM54,64.9V54h18c-1.2,9.4 -8.4,17.4 -18,20.9V54H36V37.3l18,-7.5V54z"/>
+</vector>
