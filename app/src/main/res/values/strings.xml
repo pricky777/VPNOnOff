@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VPN OnOff</string>
+
+    <string-array name="vpn_clients">
+        <item>Clash Meta (CMFA)</item>
+        <item>Bettbox</item>
+        <item>FlClash</item>
+        <item>Surfboard</item>
+    </string-array>
 </resources>

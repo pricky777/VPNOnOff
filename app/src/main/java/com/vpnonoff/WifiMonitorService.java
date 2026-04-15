@@ -33,11 +33,28 @@ public class WifiMonitorService extends Service {
     private static final String ACTION_START = CLASH_PACKAGE + ".action.START_CLASH";
     private static final String ACTION_STOP = CLASH_PACKAGE + ".action.STOP_CLASH";
 
+    // Client IDs — must match R.array.vpn_clients order
+    private static final int CLIENT_CMFA = 0;
+    private static final int CLIENT_BETTBOX = 1;
+    private static final int CLIENT_FLCLASH = 2;
+    private static final int CLIENT_SURFBOARD = 3;
+
+    // Bettbox
+    private static final String BETTBOX_PACKAGE = "com.appshub.bettbox";
+    private static final String BETTBOX_ACTIVITY = "com.appshub.bettbox.TempActivity";
+
+    // FlClash
+    private static final String FLCLASH_PACKAGE = "com.follow.clash";
+
+    // Surfboard
+    private static final String SURFBOARD_PACKAGE = "com.getsurfboard";
+
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
     private HandlerThread handlerThread;
     private Handler handler;
     private final Set<Network> wifiNetworks = new HashSet<>();
+    private int selectedClient = CLIENT_CMFA;
     private String lastDesiredAction = null;
     private static final long DEBOUNCE_MS = 500;
     private Runnable pendingAction;
@@ -45,6 +62,9 @@ public class WifiMonitorService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+
+        android.content.SharedPreferences prefs = getSharedPreferences("vpnonoff_prefs", MODE_PRIVATE);
+        selectedClient = prefs.getInt("selected_client", CLIENT_CMFA);
 
         handlerThread = new HandlerThread("WifiMonitorThread");
         handlerThread.start();
@@ -172,12 +192,27 @@ public class WifiMonitorService extends Service {
     }
 
     private boolean controlClash(String action) {
-        Log.i(TAG, "Controlling Clash: " + action);
-        if (!controlClashViaShizuku(action)) {
-            Log.e(TAG, "Failed to control Clash - check Shizuku is running and authorized");
-            return false;
+        Log.i(TAG, "Controlling VPN client (id=" + selectedClient + "): " + action);
+        boolean success;
+        switch (selectedClient) {
+            case CLIENT_BETTBOX:
+                success = controlBettboxViaShizuku(action);
+                break;
+            case CLIENT_FLCLASH:
+                success = controlFlClashViaShizuku(action);
+                break;
+            case CLIENT_SURFBOARD:
+                success = controlSurfboardViaShizuku(action);
+                break;
+            default:
+                // CMFA — original logic, calling unmodified method
+                success = controlClashViaShizuku(action);
+                break;
         }
-        return true;
+        if (!success) {
+            Log.e(TAG, "Failed to control VPN client - check Shizuku is running and authorized");
+        }
+        return success;
     }
 
     private boolean controlClashViaShizuku(String action) {
@@ -203,6 +238,75 @@ public class WifiMonitorService extends Service {
                         + " --activity-no-history"
                         + " --activity-no-animation"
                         + " --activity-exclude-from-recents";
+            }
+
+            Log.i(TAG, "Executing via Shizuku: " + cmd);
+            Method newProcess = Shizuku.class.getDeclaredMethod(
+                    "newProcess", String[].class, String[].class, String.class);
+            newProcess.setAccessible(true);
+            Process process = (Process) newProcess.invoke(null,
+                    new String[]{"sh", "-c", cmd}, null, null);
+            int exitCode = process.waitFor();
+            Log.i(TAG, "Shizuku command exit code: " + exitCode);
+            return exitCode == 0;
+        } catch (Exception e) {
+            Log.e(TAG, "Shizuku execution failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean controlBettboxViaShizuku(String action) {
+        String cmd;
+        if (ACTION_STOP.equals(action)) {
+            cmd = "am force-stop " + BETTBOX_PACKAGE;
+        } else {
+            cmd = "am start"
+                    + " -a com.appshub.bettbox.action.START"
+                    + " -n " + BETTBOX_PACKAGE + "/" + BETTBOX_ACTIVITY
+                    + " --activity-multiple-task"
+                    + " --activity-no-history"
+                    + " --activity-no-animation"
+                    + " --activity-exclude-from-recents";
+        }
+        return executeShizukuCommand(cmd);
+    }
+
+    private boolean controlFlClashViaShizuku(String action) {
+        String cmd;
+        if (ACTION_STOP.equals(action)) {
+            cmd = "am force-stop " + FLCLASH_PACKAGE;
+        } else {
+            cmd = "am start"
+                    + " -a com.follow.clash.action.START"
+                    + " -n " + FLCLASH_PACKAGE + "/.TempActivity"
+                    + " --activity-multiple-task"
+                    + " --activity-no-history"
+                    + " --activity-no-animation"
+                    + " --activity-exclude-from-recents";
+        }
+        return executeShizukuCommand(cmd);
+    }
+
+    private boolean controlSurfboardViaShizuku(String action) {
+        String cmd;
+        if (ACTION_STOP.equals(action)) {
+            cmd = "am force-stop " + SURFBOARD_PACKAGE;
+        } else {
+            cmd = "am start -a android.intent.action.VIEW -d surfboard:///start";
+        }
+        return executeShizukuCommand(cmd);
+    }
+
+    private boolean executeShizukuCommand(String cmd) {
+        try {
+            if (!Shizuku.pingBinder()) {
+                Log.w(TAG, "Shizuku not available");
+                return false;
+            }
+
+            if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "Shizuku permission not granted");
+                return false;
             }
 
             Log.i(TAG, "Executing via Shizuku: " + cmd);

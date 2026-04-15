@@ -15,7 +15,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -31,7 +34,10 @@ public class MainActivity extends AppCompatActivity {
     private static final int MIUI_OP_BACKGROUND_START_ACTIVITY = 10021;
     private static final int SHIZUKU_REQUEST_CODE = 100;
 
+    private static final String KEY_SELECTED_CLIENT = "selected_client";
+
     private Button toggleButton;
+    private Spinner clientSpinner;
     private TextView statusText;
     private TextView wifiStatusText;
     private TextView bgPopupStatusText;
@@ -59,6 +65,33 @@ public class MainActivity extends AppCompatActivity {
         shizukuStatusText = findViewById(R.id.shizukuStatusText);
 
         Shizuku.addRequestPermissionResultListener(shizukuPermListener);
+
+        clientSpinner = findViewById(R.id.clientSpinner);
+        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
+                R.array.vpn_clients, android.R.layout.simple_spinner_item);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        clientSpinner.setAdapter(adapter);
+
+        SharedPreferences prefs2 = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        clientSpinner.setSelection(prefs2.getInt(KEY_SELECTED_CLIENT, 0));
+
+        clientSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, android.view.View view, int position, long id) {
+                SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit();
+                editor.putInt(KEY_SELECTED_CLIENT, position);
+                editor.apply();
+
+                // Restart service to pick up new client selection
+                if (serviceRunning) {
+                    stopMonitorService();
+                    startMonitorService();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
