@@ -1,9 +1,9 @@
 # VPN OnOff
 
-**自动根据 WiFi 连接状态切换 VPN 的 Android 应用。**
+自动根据 WiFi 连接状态切换 VPN 的 Android 应用。
 
-**- WiFi 断开 → 自动开启 VPN
-- WiFi 连接 → 自动关闭 VPN**
+- WiFi 断开 → 自动开启 VPN
+- WiFi 连接 → 自动关闭 VPN
 
 支持亮屏、后台、锁屏等所有场景下的自动切换。
 
