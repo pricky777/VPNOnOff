@@ -83,4 +83,12 @@
         android:text="开始监听"
         android:textSize="16sp" />
 
+    <TextView
+        android:id="@+id/versionText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:textColor="#9E9E9E"
+        android:textSize="12sp" />
+
 </LinearLayout>

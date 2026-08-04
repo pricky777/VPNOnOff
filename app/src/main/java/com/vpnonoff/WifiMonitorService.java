@@ -38,6 +38,7 @@ public class WifiMonitorService extends Service {
     private static final int CLIENT_BETTBOX = 1;
     private static final int CLIENT_FLCLASH = 2;
     private static final int CLIENT_SURFBOARD = 3;
+    private static final int CLIENT_CLASH_MI = 4;
 
     // Bettbox
     private static final String BETTBOX_PACKAGE = "com.appshub.bettbox";
@@ -48,6 +49,15 @@ public class WifiMonitorService extends Service {
 
     // Surfboard
     private static final String SURFBOARD_PACKAGE = "com.getsurfboard";
+
+    // ClashMi
+    private static final String CLASH_MI_PACKAGE = "com.nebula.clashmi";
+    private static final String CLASH_MI_RECEIVER =
+            CLASH_MI_PACKAGE + ".AutomationCommandReceiver";
+    private static final String CLASH_MI_ACTION_CONNECT =
+            CLASH_MI_PACKAGE + ".action.CONNECT";
+    private static final String CLASH_MI_ACTION_DISCONNECT =
+            CLASH_MI_PACKAGE + ".action.DISCONNECT";
 
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -209,6 +219,9 @@ public class WifiMonitorService extends Service {
             case CLIENT_SURFBOARD:
                 success = controlSurfboardViaShizuku(action);
                 break;
+            case CLIENT_CLASH_MI:
+                success = controlClashMiViaShizuku(action);
+                break;
             default:
                 // CMFA — original logic, calling unmodified method
                 success = controlClashViaShizuku(action);
@@ -301,6 +314,23 @@ public class WifiMonitorService extends Service {
             // surfboard:// scheme cannot intercept the start intent.
             cmd = "am start -a android.intent.action.VIEW -d surfboard:///start -p " + SURFBOARD_PACKAGE;
         }
+        return executeShizukuCommand(cmd);
+    }
+
+    private boolean controlClashMiViaShizuku(String action) {
+        boolean disconnect = ACTION_STOP.equals(action);
+        String automationAction = disconnect
+                ? CLASH_MI_ACTION_DISCONNECT
+                : CLASH_MI_ACTION_CONNECT;
+        // Let ClashMi start its foreground VPN service while the screen is
+        // locked. The temporary allowlist expires automatically after 10s.
+        String allowlist = disconnect ? "" : "cmd deviceidle tempwhitelist -d 10000 "
+                + CLASH_MI_PACKAGE + " >/dev/null 2>&1; ";
+        String cmd = allowlist
+                + "am broadcast --user current --receiver-foreground"
+                + " --include-stopped-packages"
+                + " -a " + automationAction
+                + " -n " + CLASH_MI_PACKAGE + "/" + CLASH_MI_RECEIVER;
         return executeShizukuCommand(cmd);
     }
 

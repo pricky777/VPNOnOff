@@ -17,8 +17,10 @@
 | Bettbox | https://github.com/appshubcc/Bettbox |
 | FlClash | https://github.com/chen08209/FlClash |
 | Surfboard | https://github.com/getsurfboard/surfboard |
+| ClashMi | https://github.com/KaringX/clashmi |
 
 > 所选客户端必须已完成订阅配置，确保手动启动 VPN 可正常使用。
+> ClashMi 无感切换需要 v1.0.25.1106 或更高版本。
 
 **2. 安装并启动 [Shizuku](https://github.com/RikkaApps/Shizuku)** — 用于在锁屏等受限场景下控制 VPN 切换。
 

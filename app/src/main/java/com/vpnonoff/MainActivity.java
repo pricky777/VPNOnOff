@@ -63,6 +63,14 @@ public class MainActivity extends AppCompatActivity {
         wifiStatusText = findViewById(R.id.wifiStatusText);
         bgPopupStatusText = findViewById(R.id.bgPopupStatusText);
         shizukuStatusText = findViewById(R.id.shizukuStatusText);
+        TextView versionText = findViewById(R.id.versionText);
+        try {
+            String versionName = getPackageManager()
+                    .getPackageInfo(getPackageName(), 0).versionName;
+            versionText.setText(getString(R.string.version_format, versionName));
+        } catch (PackageManager.NameNotFoundException e) {
+            versionText.setVisibility(android.view.View.GONE);
+        }
 
         Shizuku.addRequestPermissionResultListener(shizukuPermListener);
 
@@ -138,11 +146,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         IntentFilter filter = new IntentFilter("com.vpnonoff.STATUS_CHANGED");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(statusReceiver, filter);
-        }
+        ContextCompat.registerReceiver(this, statusReceiver, filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED);
         updateWifiStatus();
         updateUI();
         checkPermissions();

@@ -30,7 +30,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="WiFi state monitor that toggles a user-installed VPN client (CMFA/Bettbox/FlClash/Surfboard) via Shizuku" />
+                android:value="WiFi state monitor that toggles a user-installed VPN client (CMFA/Bettbox/FlClash/Surfboard/ClashMi) via Shizuku" />
         </service>
 
         <provider
